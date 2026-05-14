@@ -1,5 +1,17 @@
+import subprocess
+import sys
+
+# Truco de auto-instalación para servidores gratuitos
+try:
+    import plotly.express as px
+except ModuleNotFoundError:
+    # Si el servidor no tiene plotly, lo instala a la fuerza en vivo
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
+    import plotly.express as px
+
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 import plotly.express as px
 from fpdf import FPDF
 import io
