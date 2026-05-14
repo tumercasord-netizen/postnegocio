@@ -1,224 +1,282 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
-# 1. CONFIGURACIÓN DE LA PÁGINA WEB NATIVA
-st.set_page_config(page_title="Sistema Anti-Pérdidas Multinegocio", layout="wide", page_icon="🏪")
+# 1. CONFIGURACIÓN DE LA PÁGINA WEB NATIVA (CERO INSTALACIONES)
+st.set_page_config(page_title="ERP Multi-Negocio Pro", layout="wide", page_icon="🏬")
 
-st.title("🏪 Sistema de Control Comercial Multi-Plantilla")
-st.markdown("Registra tus operaciones diarias en tiempo real para eliminar robos, fiados olvidados y mermas.")
+st.title("🏬 Sistema ERP Operativo Universal")
+st.markdown("Gestión en vivo para Tiendas Multirrubro, Almacenes de Cadena, Farmacias y Colmados.")
 
-# --- MEMORIA VOLÁTIL DEL SERVIDOR (Base de Datos Viva en Sesión) ---
-if 'db_ventas' not in st.session_state:
-    st.session_state.db_ventas = []
-if 'db_fiados' not in st.session_state:
-    st.session_state.db_fiados = []
-if 'db_inventario' not in st.session_state:
-    # Datos semilla iniciales
-    st.session_state.db_inventario = [
-        {"Artículo": "Arroz Premium 1lb", "Categoría": "Alimentos", "Costo": 25.0, "Precio": 35.0, "Stock": 100, "Variante_Talla": "N/A", "Vencimiento": datetime(2026, 8, 15).date()},
-        {"Artículo": "Camisa Casual Manga Corta", "Categoría": "Ropa", "Costo": 400.0, "Precio": 850.0, "Stock": 12, "Variante_Talla": "M", "Vencimiento": None},
-        {"Artículo": "Camisa Casual Manga Corta", "Categoría": "Ropa", "Costo": 400.0, "Precio": 850.0, "Stock": 2, "Variante_Talla": "XL", "Vencimiento": None},
-        {"Artículo": "Amoxicilina 500mg", "Categoría": "Farmacia", "Costo": 150.0, "Precio": 300.0, "Stock": 40, "Variante_Talla": "N/A", "Vencimiento": datetime(2026, 5, 28).date()}
-    ]
+# --- SISTEMA DE ALMACENAMIENTO LOCAL EN EL SERVIDOR ---
+FICHERO_INV = "inventario_universal.csv"
+FICHERO_VEN = "ventas_universal.csv"
+FICHERO_FIA = "fiados_universal.csv"
 
-# 2. SELECTOR DE PLANTILLA DE NEGOCIO
-st.sidebar.header("⚙️ Configuración del Comercio")
+def guardar_datos(df, archivo):
+    df.to_csv(archivo, index=False)
+
+def cargar_datos(archivo, columnas_defecto):
+    if os.path.exists(archivo):
+        try:
+            return pd.read_csv(archivo)
+        except:
+            return pd.DataFrame(columns=columnas_defecto)
+    else:
+        return pd.DataFrame(columns=columnas_defecto)
+
+# Inicializar estados de la base de datos
+if 'datos_inv' not in st.session_state:
+    df_inicial = cargar_datos(FICHERO_INV, ["Artículo", "Categoría", "SubRubro", "Costo", "Precio", "Stock", "Ubicacion", "Variante", "Vencimiento"])
+    if df_inicial.empty:
+        # Datos iniciales mezclados para demostrar que acepta de todo en el primer arranque
+        df_inicial = pd.DataFrame([
+            {"Artículo": "Jeans Slim Fit", "Categoría": "Boutique / Ropa", "SubRubro": "Pantalones", "Costo": 500.0, "Precio": 1200.0, "Stock": 20, "Ubicacion": "Exhibición Tienda", "Variante": "Talla M / Azul", "Vencimiento": "N/A"},
+            {"Artículo": "iPhone 13 128GB", "Categoría": "Tecnología / Celulares", "SubRubro": "Smartphones", "Costo": 20000.0, "Precio": 28000.0, "Stock": 5, "Ubicacion": "Almacén Central (Rack B)", "Variante": "Negro / Libre", "Vencimiento": "N/A"},
+            {"Artículo": "Tenis Deportivos R1", "Categoría": "Calzado / Zapatos", "SubRubro": "Calzado Hombre", "Costo": 1200.0, "Precio": 2500.0, "Stock": 8, "Ubicacion": "Almacén Pasillo 1", "Variante": "Talla 42 / Negro", "Vencimiento": "N/A"},
+            {"Artículo": "Saco de Arroz 125lb", "Categoría": "Colmado / Consumo", "SubRubro": "Granos", "Costo": 2200.0, "Precio": 2800.0, "Stock": 15, "Ubicacion": "Depósito Trasero", "Variante": "Premium", "Vencimiento": "2026-12-31"}
+        ])
+    st.session_state.datos_inv = df_inicial
+
+if 'datos_ven' not in st.session_state:
+    st.session_state.datos_ven = cargar_datos(FICHERO_VEN, ["Fecha", "Artículo", "Variante", "Cantidad", "Costo_Total", "Venta_Total", "Ganancia_Neta", "Método", "Ubicacion_Origen"])
+
+if 'datos_fia' not in st.session_state:
+    st.session_state.datos_fia = cargar_datos(FICHERO_FIA, ["Fecha", "Cliente", "Concepto", "Monto", "Estado", "Tipo"])
+
+# 2. SELECTOR ESTRUCTURAL DE PLANTILLA
+st.sidebar.header("⚙️ Configuración de Plantilla")
 tipo_negocio = st.sidebar.selectbox(
-    "Plantilla del Sistema:",
-    ["Colmado / Bodega / Almacén", "Tienda de Ropa / Calzado", "Farmacia / Perfumería", "General / Otro"]
+    "Giro Operativo Primario:",
+    ["Tienda Departamental (Ropa, Calzado, Celulares)", "Almacén de Distribución / Depósito de Tienda", "Colmado / Minimarket / Bodega", "Farmacia / Cosméticos"]
 )
 
-# Adecuación visual de etiquetas según el negocio seleccionado
-terminos = {
-    "Colmado / Bodega / Almacén": {"prod": "Producto/Vívere", "var": "Marca/Detalle", "cat": "Pasillo/Rubro", "mostrar_vencimiento": True},
-    "Tienda de Ropa / Calzado": {"prod": "Prenda/Calzado", "var": "Talla/Color", "cat": "Colección/Género", "mostrar_vencimiento": False},
-    "Farmacia / Perfumería": {"prod": "Medicamento/Fragancia", "var": "Laboratorio/Presentación", "cat": "Categoría", "mostrar_vencimiento": True},
-    "General / Otro": {"prod": "Artículo/Servicio", "var": "Variante/Detalle", "cat": "Categoría", "mostrar_vencimiento": True}
+# Mapeo inteligente de términos, sub-rubros y ubicaciones según la naturaleza del negocio
+config_giro = {
+    "Tienda Departamental (Ropa, Calzado, Celulares)": {
+        "prod": "Artículo/Modelo", "var": "Talla/Color/Capacidad", "cat_opciones": ["Boutique / Ropa", "Calzado / Zapatos", "Tecnología / Celulares", "Accesorios"],
+        "ubicaciones": ["Exhibición Tienda", "Vitrina Principal", "Almacén de Tienda (Backroom)", "Depósito General"], "ver_vence": False
+    },
+    "Almacén de Distribución / Depósito de Tienda": {
+        "prod": "Mercancía / Ítem / SKU", "var": "Lote / Formato Caja", "cat_opciones": ["Cajas Ropa / Textil", "Pallets Calzado", "Lotes Electrónica", "Mercancía en Tránsito"],
+        "ubicaciones": ["Rack Sector A", "Rack Sector B", "Zona de Carga/Descarga", "Bóveda de Seguridad"], "ver_vence": False
+    },
+    "Colmado / Minimarket / Bodega": {
+        "prod": "Producto / Vívere", "var": "Marca / Peso", "cat_opciones": ["Alimentos / Granos", "Bebidas / Nevera", "Limpieza", "Snacks"],
+        "ubicaciones": ["Tramo Exhibición", "Nevera / Freezer", "Depósito Trasero / Almacén"], "ver_vence": True
+    },
+    "Farmacia / Cosméticos": {
+        "prod": "Medicamento / Fragancia", "var": "Laboratorio / Miligramos", "cat_opciones": ["Analgésicos", "Antibióticos", "Cuidado Personal", "Perfumería Alta Gama"],
+        "ubicaciones": ["Estantería A-Z", "Nevera Médica", "Mostrador", "Almacén de Fármacos"], "ver_vence": True
+    }
 }[tipo_negocio]
 
-# --- MÓDULO DE ABASTECIMIENTO DIRECTO DESDE LA WEB ---
+# --- FORMULARIO DE REPOSICIÓN Y ENTRADA DE STOCK UNIVERSAL ---
 st.sidebar.markdown("---")
-st.sidebar.subheader(f"➕ Abastecer {tipo_negocio}")
+st.sidebar.subheader("➕ Ingresar Nueva Mercancía")
 with st.sidebar.form("form_inventario", clear_on_submit=True):
-    inv_nombre = st.text_input(f"Nombre del {terminos['prod']}:")
-    inv_cat = st.text_input(f"{terminos['cat']}:")
-    inv_var = st.text_input(f"Especificar {terminos['var']}:", value="N/A")
-    inv_costo = st.number_input("Costo de Compra ($):", min_value=0.0, step=1.0)
-    inv_precio = st.number_input("Precio de Venta ($):", min_value=0.0, step=1.0)
-    inv_stock = st.number_input("Cantidad que Entra:", min_value=1, step=1)
+    inv_nombre = st.text_input(f"Nombre del {config_giro['prod']}:")
+    inv_cat = st.selectbox("Departamento / Categoría:", config_giro["cat_opciones"])
+    inv_sub = st.text_input("Sub-Rubro / Tipo (Ej: Pantalón, Vitrina, Smartphone, Sacos):", value="General")
+    inv_var = st.text_input(f"Variante ({config_giro['var']}):", value="Estándar")
+    inv_ubicacion = st.selectbox("¿Dónde se va a guardar?", config_giro["ubicaciones"])
     
-    inv_vencimiento = None
-    if terminos["mostrar_vencimiento"]:
-        inv_vencimiento = st.date_input("Fecha de Vencimiento (Si aplica):", value=datetime.now().date() + timedelta(days=180))
-        
-    btn_guardar_inv = st.form_submit_button("📥 Guardar en Stock")
+    col_precios = st.columns(2)
+    inv_costo = col_precios[0].number_input("Costo Fábrica ($):", min_value=0.0, step=10.0)
+    inv_precio = col_precios[1].number_input("Precio Venta ($):", min_value=0.0, step=10.0)
+    
+    inv_stock = st.number_input("Cantidad de Unidades / Bultos:", min_value=1, step=1)
+    
+    inv_vencimiento = "N/A"
+    if config_giro["ver_vence"]:
+        vence_check = st.checkbox("¿Tiene fecha de vencimiento?")
+        if vence_check:
+            inv_vencimiento = str(st.date_input("Fecha de Caducidad:", value=datetime.now().date() + timedelta(days=90)))
+            
+    btn_guardar_inv = st.form_submit_button("📥 Registrar y Almacenar")
     if btn_guardar_inv and inv_nombre.strip():
-        st.session_state.db_inventario.append({
-            "Artículo": inv_nombre, "Categoría": inv_cat, "Costo": inv_costo,
-            "Precio": inv_precio, "Stock": inv_stock, "Variante_Talla": inv_var, "Vencimiento": inv_vencimiento
-        })
-        st.sidebar.success("¡Mercancía añadida!")
+        nueva_fila = pd.DataFrame([{
+            "Artículo": inv_nombre, "Categoría": inv_cat, "SubRubro": inv_sub, "Costo": inv_costo, 
+            "Precio": inv_precio, "Stock": inv_stock, "Ubicacion": inv_ubicacion, "Variante": inv_var, "Vencimiento": inv_vencimiento
+        }])
+        st.session_state.datos_inv = pd.concat([st.session_state.datos_inv, nueva_fila], ignore_index=True)
+        guardar_datos(st.session_state.datos_inv, FICHERO_INV)
+        st.sidebar.success("¡Registro guardado con éxito!")
         st.rerun()
 
-# 3. PESTAÑAS OPERATIVAS (Módulos de Solución)
+# 3. PESTAÑAS OPERATIVAS DEL DASHBOARD
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🛒 Caja Registradora (Vender)", 
-    "📓 Libro de Fiados y Apartados", 
-    "⏳ Alertas de Inventario y Vencimientos", 
-    "📈 Dashboard Financiero (Ganancias)"
+    "🛒 Terminal de Ventas / Despacho", 
+    "📓 Cuentas Corrientes (Fiados / Apartados)", 
+    "📦 Inventarios y Almacenes de Tienda", 
+    "📈 Auditoría de Rentabilidad Neta"
 ])
 
 # ==========================================
-# PESTAÑA 1: CAJA REGISTRADORA
+# PESTAÑA 1: TERMINAL DE VENTAS / DESPACHO (Caja)
 # ==========================================
 with tab1:
-    st.subheader("🛒 Registrar Nueva Venta")
-    df_inv_actual = pd.DataFrame(st.session_state.db_inventario)
+    st.subheader(f"🛒 Consola de Facturación y Despacho - {tipo_negocio}")
+    df_actual = st.session_state.datos_inv
     
-    if not df_inv_actual.empty:
+    if not df_actual.empty:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            prod_seleccionado = st.selectbox(f"Selecciona el {terminos['prod']}:", df_inv_actual["Artículo"].unique())
-            variantes_disp = df_inv_actual[df_inv_actual["Artículo"] == prod_seleccionado]
-            variante_sel = st.selectbox(f"Variante ({terminos['var']}):", variantes_disp["Variante_Talla"].unique())
+            # Filtrar productos disponibles por categorías del giro actual
+            df_giro_actual = df_actual[df_actual["Categoría"].isin(config_giro["cat_opciones"])]
+            if df_giro_actual.empty:
+                st.info("No hay productos registrados para este departamento. Registra mercancía en la barra lateral.")
+                st.stop()
+                
+            prod_sel = st.selectbox(f"Selecciona {config_giro['prod']}:", df_giro_actual["Artículo"].unique())
+            var_disponibles = df_giro_actual[df_giro_actual["Artículo"] == prod_sel]
+            var_sel = st.selectbox(f"Selecciona {config_giro['var']}:", var_disponibles["Variante"].unique())
             
-            # Filtrar el elemento correspondiente de manera segura
-            datos_item = variantes_disp[variantes_disp["Variante_Talla"] == variante_sel].iloc[0]
+            # Obtener datos de la variante específica
+            datos_producto = var_disponibles[var_disponibles["Variante"] == var_sel].iloc[0]
             
         with col2:
-            cantidad_vender = st.number_input("Cantidad a vender:", min_value=1, max_value=int(datos_item["Stock"]), value=1)
-            metodo_pago = st.selectbox("Método de Pago:", ["Efectivo", "Tarjeta", "Fiado / Crédito", "Apartado"])
+            max_unidades = int(datos_producto["Stock"]) if int(datos_producto["Stock"]) > 0 else 1
+            cantidad_vender = st.number_input("Cantidad a retirar/vender:", min_value=1, max_value=max_unidades, value=1)
+            metodo_pago = st.selectbox("Condición de Entrega/Pago:", ["Efectivo / Contado", "Tarjeta / Transferencia", "Fiado / Cuenta Abierta", "Apartado de Mercancía"])
             
-            cliente_deuda = "Anónimo"
-            if metodo_pago in ["Fiado / Crédito", "Apartado"]:
-                cliente_deuda = st.text_input("Nombre de la persona que te debe ($):", value="")
-            
+            cliente_deuda = ""
+            if metodo_pago in ["Fiado / Cuenta Abierta", "Apartado de Mercancía"]:
+                cliente_deuda = st.text_input("Nombre de la Persona / Cliente responsable:", value="")
+                
         with col3:
-            st.markdown(f"**Precio Unitario:** ${datos_item['Precio']:,.2f}")
-            total_operacion = cantidad_vender * datos_item['Precio']
-            st.markdown(f"### Total a Cobrar: ${total_operacion:,.2f}")
+            st.markdown(f"**Ubicación de Origen:** `{datos_producto['Ubicacion']}`")
+            st.markdown(f"**Precio Unitario:** ${datos_producto['Precio']:,.2f}")
+            total_facturado = cantidad_vender * datos_producto['Precio']
+            st.markdown(f"### Monto Total: ${total_facturado:,.2f}")
             
-            if datos_item["Stock"] <= 3:
-                st.warning(f"¡Alerta de Stock Bajo! Solo quedan {datos_item['Stock']} unidades.")
+            if datos_producto["Stock"] <= 0:
+                st.error("❌ Sin existencias físicas en esta ubicación.")
+            elif datos_producto["Stock"] <= 3:
+                st.warning(f"⚠️ Alerta: Quedan solo {datos_producto['Stock']} unidades.")
 
-        if st.button("🔴 Confirmar y Procesar Venta", use_container_width=True):
-            if metodo_pago in ["Fiado / Crédito", "Apartado"] and not cliente_deuda.strip():
-                st.error("❌ No puedes fiar o apartar sin colocar el nombre del cliente.")
+        if st.button("🔴 Validar Transacción y Actualizar Stock", use_container_width=True):
+            if datos_producto["Stock"] <= 0:
+                st.error("No se puede despachar mercancía agotada.")
+            elif metodo_pago in ["Fiado / Cuenta Abierta", "Apartado de Mercancía"] and not cliente_deuda.strip():
+                st.error("❌ Error: Es obligatorio asignar un cliente para deudas o apartados.")
             else:
-                # 1. Registrar venta
-                nueva_venta = {
-                    "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Artículo": prod_seleccionado,
-                    "Variante": variante_sel,
-                    "Cantidad": cantidad_vender,
-                    "Costo_Total": cantidad_vender * datos_item["Costo"],
-                    "Venta_Total": total_operacion,
-                    "Ganancia_Neta": total_operacion - (cantidad_vender * datos_item["Costo"]),
-                    "Método": metodo_pago
-                }
-                st.session_state.db_ventas.append(nueva_venta)
+                # 1. Registrar venta/salida
+                v_costo = cantidad_vender * datos_producto["Costo"]
+                nueva_v = pd.DataFrame([{
+                    "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "Artículo": prod_sel, "Variante": var_sel,
+                    "Cantidad": cantidad_vender, "Costo_Total": v_costo, "Venta_Total": total_facturado,
+                    "Ganancia_Neta": total_facturado - v_costo, "Método": metodo_pago, "Ubicacion_Origen": datos_producto["Ubicacion"]
+                }])
+                st.session_state.datos_ven = pd.concat([st.session_state.datos_ven, nueva_v], ignore_index=True)
+                guardar_datos(st.session_state.datos_ven, FICHERO_VEN)
                 
-                # 2. Restar del inventario real
-                for idx, item in enumerate(st.session_state.db_inventario):
-                    if item["Artículo"] == prod_seleccionado and item["Variante_Talla"] == variante_sel:
-                        st.session_state.db_inventario[idx]["Stock"] -= cantidad_vender
+                # 2. Descontar stock de la ubicación correspondiente
+                for idx, fila in df_actual.iterrows():
+                    if fila["Artículo"] == prod_sel and fila["Variante"] == var_sel and fila["Ubicacion"] == datos_producto["Ubicacion"]:
+                        st.session_state.datos_inv.at[idx, "Stock"] -= cantidad_vender
+                guardar_datos(st.session_state.datos_inv, FICHERO_INV)
                 
-                # 3. Registrar cuenta por cobrar
-                if metodo_pago in ["Fiado / Crédito", "Apartado"]:
-                    st.session_state.db_fiados.append({
-                        "Fecha": datetime.now().strftime("%Y-%m-%d"),
-                        "Cliente": cliente_deuda,
-                        "Concepto": f"{cantidad_vender}x {prod_seleccionado} ({variante_sel})",
-                        "Monto": total_operacion,
-                        "Estado": "Pendiente",
-                        "Tipo": metodo_pago
-                    })
-                
-                st.success("✅ Operación procesada de forma nativa.")
+                # 3. Registrar en cuentas por cobrar si aplica
+                if metodo_pago in ["Fiado / Cuenta Abierta", "Apartado de Mercancía"]:
+                    nueva_d = pd.DataFrame([{
+                        "Fecha": datetime.now().strftime("%Y-%m-%d"), "Cliente": cliente_deuda,
+                        "Concepto": f"{cantidad_vender}x {prod_sel} ({var_sel})", "Monto": total_facturado,
+                        "Estado": "Pendiente", "Tipo": metodo_pago
+                    }])
+                    st.session_state.datos_fia = pd.concat([st.session_state.datos_fia, nueva_d], ignore_index=True)
+                    guardar_datos(st.session_state.datos_fia, FICHERO_FIA)
+                    
+                st.success("✅ Stock descontado e historial actualizado.")
                 st.rerun()
     else:
-        st.info("No hay mercancía registrada. Agrégala en el panel izquierdo.")
+        st.info("Inventario vacío.")
 
 # ==========================================
-# PESTAÑA 2: LIBRO DE FIADOS Y APARTADOS
+# PESTAÑA 2: CUENTAS CORRIENTES (Fiados/Apartados)
 # ==========================================
 with tab2:
-    st.subheader("📓 Control de Cuentas por Cobrar y Apartados")
-    if st.session_state.db_fiados:
-        df_fiados = pd.DataFrame(st.session_state.db_fiados)
-        monto_calle = df_fiados[df_fiados["Estado"] == "Pendiente"]["Monto"].sum()
-        st.error(f"⚠️ Dinero total en riesgo en la calle: **${monto_calle:,.2f}**")
-        st.dataframe(df_fiados, use_container_width=True)
+    st.subheader("📓 Libro de Deudas y Registro de Apartados de Mercancía")
+    df_f = st.session_state.datos_fia
+    
+    if not df_f.empty:
+        monto_calle = df_f[df_f["Estado"] == "Pendiente"]["Monto"].sum()
+        st.error(f"⚠️ Capital pendiente de cobro / liquidación: **${monto_calle:,.2f}**")
+        st.dataframe(df_f, use_container_width=True)
         
         st.markdown("---")
-        st.write("🔧 **Registrar Cobros:**")
+        st.write("🔧 **Registrar Abonos o Liquidación Completa:**")
         c1, c2 = st.columns(2)
         
-        filtro_pendientes = [i for i, f in enumerate(st.session_state.db_fiados) if f["Estado"] == "Pendiente"]
-        if filtro_pendientes:
-            idx_cobrar = c1.selectbox("Deuda a liquidar:", filtro_pendientes, format_func=lambda x: f"{st.session_state.db_fiados[x]['Cliente']} - ${st.session_state.db_fiados[x]['Monto']} [{st.session_state.db_fiados[x]['Tipo']}]")
-            if c2.button("Saldar Deuda Completamente", use_container_width=True):
-                st.session_state.db_fiados[idx_cobrar]["Estado"] = "Saldado"
-                st.success("¡Cobro guardado!")
+        indices_pendientes = df_f[df_f["Estado"] == "Pendiente"].index.tolist()
+        if indices_pendientes:
+            opcion_cobrar = c1.selectbox("Selecciona la cuenta:", indices_pendientes, format_func=lambda x: f"{df_f.at[x, 'Cliente']} - Monto: ${df_f.at[x, 'Monto']} ({df_f.at[x, 'Concepto']})")
+            if c2.button("✔️ Registrar Saldo de Cuenta", use_container_width=True):
+                st.session_state.datos_fia.at[opcion_cobrar, "Estado"] = "Saldado"
+                guardar_datos(st.session_state.datos_fia, FICHERO_FIA)
+                st.success("¡Cuenta actualizada y archivada!")
                 st.rerun()
         else:
-            st.success("¡Cuentas al día!")
+            st.success("¡Todas las cuentas comerciales están al día!")
     else:
-        st.success("🎉 ¡Nadie debe dinero en este turno!")
+        st.success("No hay registros de créditos o apartados en la base de datos.")
 
 # ==========================================
-# PESTAÑA 3: ALERTAS DE INVENTARIO Y VENCIMIENTOS
+# PESTAÑA 3: INVENTARIOS Y ALMACENES DE TIENDA
 # ==========================================
 with tab3:
-    st.subheader("⏳ Módulo Antimerma de Productos y Tallas")
-    df_inv = pd.DataFrame(st.session_state.db_inventario)
+    st.subheader("📦 Mapa de Ubicaciones, Almacenes y Stock")
+    df_i = st.session_state.datos_inv
     
-    col_inv1, col_inv2 = st.columns(2)
-    with col_inv1:
-        st.warning("📉 **Control de Stock Muerto (Sin movimiento):**")
+    if not df_i.empty:
+        # Filtrar solo el inventario correspondiente al tipo de negocio seleccionado
+        df_i_giro = df_i[df_i["Categoría"].isin(config_giro["cat_opciones"])]
         
-        # GRÁFICO NATIVO DE STREAMLIT (No requiere instalar nada)
-        df_chart = df_inv.groupby("Artículo")["Stock"].sum()
-        st.bar_chart(df_chart)
-        
-    with col_inv2:
-        st.error("📆 **Alertas de Vencimiento de Lotes:**")
-        if terminos["mostrar_vencimiento"]:
-            hoy = datetime.now().date()
-            limite_alerta = hoy + timedelta(days=30)
-            df_vencimiento = df_inv[df_inv["Vencimiento"].notnull()]
-            df_criticos = df_vencimiento[df_vencimiento["Vencimiento"] <= limite_alerta]
+        col_an1, col_an2 = st.columns([1, 2])
+        with col_an1:
+            st.info("🏢 **Volumen de Stock por Ubicación:**")
+            # Gráfico de barras nativo (Cero dependencias externas)
+            grafico_ubicaciones = df_i_giro.groupby("Ubicacion")["Stock"].sum()
+            st.bar_chart(grafico_ubicaciones)
             
-            if not df_criticos.empty:
-                st.write("❌ **Mercancía próxima a expirar (Menos de 30 días):**")
-                for _, fila in df_criticos.iterrows():
-                    st.write(f"⚠️ **{fila['Artículo']}** ({fila['Variante_Talla']}) - Stock: {fila['Stock']} unds - Vence: {fila['Vencimiento']}")
-            else:
-                st.success("No hay mermas por vencimiento este mes.")
-        else:
-            st.info("Este giro de negocio no deprecia por caducidad química.")
+        with col_an2:
+            st.warning("📋 **Auditoría Detallada del Almacén Seleccionado:**")
+            st.dataframe(df_i_giro[["Artículo", "SubRubro", "Variante", "Stock", "Ubicacion", "Vencimiento"]], use_container_width=True)
+            
+            if config_giro["ver_vence"]:
+                st.error("📆 **Lotes con Vencimiento Crítico (Menos de 30 días):**")
+                df_con_fecha = df_i_giro[df_i_giro["Vencimiento"] != "N/A"].copy()
+                df_con_fecha["Vencimiento_DT"] = pd.to_datetime(df_con_fecha["Vencimiento"], errors='coerce').dt.date
+                alertas = df_con_fecha[df_con_fecha["Vencimiento_DT"] <= (datetime.now().date() + timedelta(days=30))]
+                if not alertas.empty:
+                    st.dataframe(alertas[["Artículo", "Variante", "Stock", "Vencimiento"]], use_container_width=True)
+                else:
+                    st.success("Cero alertas de vencimiento en este departamento.")
+    else:
+        st.info("Sin registros de existencias.")
 
 # ==========================================
-# PESTAÑA 4: DASHBOARD FINANCIERO
+# PESTAÑA 4: AUDITORÍA DE RENTABILIDAD NETA
 # ==========================================
 with tab4:
-    st.subheader("📊 Análisis Neto de Ganancias")
-    if st.session_state.db_ventas:
-        df_ventas = pd.DataFrame(st.session_state.db_ventas)
-        
-        kpi1, kpi2, kpi3 = st.columns(3)
-        with kpi1:
-            st.metric("Venta Total en Caja", f"${df_ventas['Venta_Total'].sum():,.2f}")
-        with kpi2:
-            st.metric("Inversión de Proveedores", f"${df_ventas['Costo_Total'].sum():,.2f}")
-        with kpi3:
-            margen_p = (df_ventas['Ganancia_Neta'].sum() / df_ventas['Venta_Total'].sum()) * 100
-            st.metric("Ganancia Real Líquida", f"${df_ventas['Ganancia_Neta'].sum():,.2f}", delta=f"{margen_p:.1f}% Margen")
+    st.subheader("📊 Consola Contable de Márgenes y Caja Neta")
+    df_v = st.session_state.datos_ven
+    
+    if not df_v.empty:
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            st.metric("Venta Bruta Total", f"${df_v['Venta_Total'].sum():,.2f}")
+        with k2:
+            st.metric("Costo Neto de Reposición", f"${df_v['Costo_Total'].sum():,.2f}", help="Dinero destinado exclusivamente a la recompra de mercancía.")
+        with k3:
+            ganancia_neta_real = df_v['Ganancia_Neta'].sum()
+            ratio = (ganancia_neta_real / df_v['Venta_Total'].sum() * 100) if df_v['Venta_Total'].sum() > 0 else 0
+            st.metric("Ganancia Neta Líquida", f"${ganancia_neta_real:,.2f}", delta=f"{ratio:.1f}% Margen de Utilidad")
             
         st.markdown("---")
-        st.write("📋 **Historial de Operaciones del Turno Actual:**")
-        st.dataframe(df_ventas[["Fecha", "Artículo", "Variante", "Cantidad", "Venta_Total", "Ganancia_Neta", "Método"]], use_container_width=True)
+        st.write("📋 **Historial Clínico de Despachos y Operaciones:**")
+        st.dataframe(df_v[["Fecha", "Artículo", "Variante", "Cantidad", "Ubicacion_Origen", "Venta_Total", "Ganancia_Neta", "Método"]], use_container_width=True)
     else:
-        st.info("Sin ventas registradas en este turno.")
+        st.info("No se registran transacciones en el sistema para este período.")
