@@ -68,9 +68,10 @@ with st.sidebar.form("form_universal", clear_on_submit=True):
     in_var = st.text_input(f"Variante/Detalle ({ayuda['var']}):", value="N/A")
     in_ubica = st.text_input("Ubicación Física (Ej: Estante B, Vitrina, Rack 3):", value="Mostrador")
     
-    col_p = st.columns(2)
-    in_costo = col_p.number_input("Costo Fábrica ($):", min_value=0.0, step=10.0)
-    in_precio = col_p.number_input("Precio Venta ($):", min_value=0.0, step=10.0)
+    # SOLUCIÓN AL ERROR: Desempaquetar las columnas correctamente
+    col_costo, col_precio = st.columns(2)
+    in_costo = col_costo.number_input("Costo Fábrica ($):", min_value=0.0, step=10.0)
+    in_precio = col_precio.number_input("Precio Venta ($):", min_value=0.0, step=10.0)
     
     in_stock = st.number_input("Cantidad que ingresa:", min_value=1, step=1)
     
@@ -119,7 +120,7 @@ with tab1:
             df_vars = df_filtrado_area[df_filtrado_area["Artículo"] == prod_sel]
             var_sel = st.selectbox("Selecciona la Variante/Talla:", df_vars["Variante"].unique())
             
-            datos_item = df_vars[df_vars["Variante"] == var_sel].iloc
+            datos_item = df_vars[df_vars["Variante"] == var_sel].iloc[0]
             
         with col2:
             max_existencias = int(datos_item["Stock"]) if int(datos_item["Stock"]) > 0 else 1
