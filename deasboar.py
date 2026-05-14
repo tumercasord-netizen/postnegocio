@@ -1,196 +1,224 @@
-import subprocess
-import sys
-
-# Truco de auto-instalación para servidores gratuitos
-try:
-    import plotly.express as px
-except ModuleNotFoundError:
-    # Si el servidor no tiene plotly, lo instala a la fuerza en vivo
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
-    import plotly.express as px
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import plotly.express as px
-from fpdf import FPDF
-import io
-import chardet
 
-# Configuración base de la infraestructura web
-st.set_page_config(page_title="ERP Dashboard Universal", layout="wide", page_icon="🏬")
+# 1. CONFIGURACIÓN DE LA PÁGINA WEB NATIVA
+st.set_page_config(page_title="Sistema Anti-Pérdidas Multinegocio", layout="wide", page_icon="🏪")
 
-st.title("🏬 Sistema Universal de Analítica de Ventas")
-st.markdown("Carga las ventas de **cualquier negocio** (Farmacia, Colmado, Ropa, Repuestos). El sistema se adapta a tus datos.")
+st.title("🏪 Sistema de Control Comercial Multi-Plantilla")
+st.markdown("Registra tus operaciones diarias en tiempo real para eliminar robos, fiados olvidados y mermas.")
 
-# Función avanzada para leer archivos CSV/Excel con codificación oculta
-def cargar_datos_seguro(file):
-    try:
-        if file.name.endswith(('.xlsx', '.xls')):
-            return pd.read_excel(file)
+# --- MEMORIA VOLÁTIL DEL SERVIDOR (Base de Datos Viva en Sesión) ---
+if 'db_ventas' not in st.session_state:
+    st.session_state.db_ventas = []
+if 'db_fiados' not in st.session_state:
+    st.session_state.db_fiados = []
+if 'db_inventario' not in st.session_state:
+    # Datos semilla iniciales
+    st.session_state.db_inventario = [
+        {"Artículo": "Arroz Premium 1lb", "Categoría": "Alimentos", "Costo": 25.0, "Precio": 35.0, "Stock": 100, "Variante_Talla": "N/A", "Vencimiento": datetime(2026, 8, 15).date()},
+        {"Artículo": "Camisa Casual Manga Corta", "Categoría": "Ropa", "Costo": 400.0, "Precio": 850.0, "Stock": 12, "Variante_Talla": "M", "Vencimiento": None},
+        {"Artículo": "Camisa Casual Manga Corta", "Categoría": "Ropa", "Costo": 400.0, "Precio": 850.0, "Stock": 2, "Variante_Talla": "XL", "Vencimiento": None},
+        {"Artículo": "Amoxicilina 500mg", "Categoría": "Farmacia", "Costo": 150.0, "Precio": 300.0, "Stock": 40, "Variante_Talla": "N/A", "Vencimiento": datetime(2026, 5, 28).date()}
+    ]
+
+# 2. SELECTOR DE PLANTILLA DE NEGOCIO
+st.sidebar.header("⚙️ Configuración del Comercio")
+tipo_negocio = st.sidebar.selectbox(
+    "Plantilla del Sistema:",
+    ["Colmado / Bodega / Almacén", "Tienda de Ropa / Calzado", "Farmacia / Perfumería", "General / Otro"]
+)
+
+# Adecuación visual de etiquetas según el negocio seleccionado
+terminos = {
+    "Colmado / Bodega / Almacén": {"prod": "Producto/Vívere", "var": "Marca/Detalle", "cat": "Pasillo/Rubro", "mostrar_vencimiento": True},
+    "Tienda de Ropa / Calzado": {"prod": "Prenda/Calzado", "var": "Talla/Color", "cat": "Colección/Género", "mostrar_vencimiento": False},
+    "Farmacia / Perfumería": {"prod": "Medicamento/Fragancia", "var": "Laboratorio/Presentación", "cat": "Categoría", "mostrar_vencimiento": True},
+    "General / Otro": {"prod": "Artículo/Servicio", "var": "Variante/Detalle", "cat": "Categoría", "mostrar_vencimiento": True}
+}[tipo_negocio]
+
+# --- MÓDULO DE ABASTECIMIENTO DIRECTO DESDE LA WEB ---
+st.sidebar.markdown("---")
+st.sidebar.subheader(f"➕ Abastecer {tipo_negocio}")
+with st.sidebar.form("form_inventario", clear_on_submit=True):
+    inv_nombre = st.text_input(f"Nombre del {terminos['prod']}:")
+    inv_cat = st.text_input(f"{terminos['cat']}:")
+    inv_var = st.text_input(f"Especificar {terminos['var']}:", value="N/A")
+    inv_costo = st.number_input("Costo de Compra ($):", min_value=0.0, step=1.0)
+    inv_precio = st.number_input("Precio de Venta ($):", min_value=0.0, step=1.0)
+    inv_stock = st.number_input("Cantidad que Entra:", min_value=1, step=1)
+    
+    inv_vencimiento = None
+    if terminos["mostrar_vencimiento"]:
+        inv_vencimiento = st.date_input("Fecha de Vencimiento (Si aplica):", value=datetime.now().date() + timedelta(days=180))
+        
+    btn_guardar_inv = st.form_submit_button("📥 Guardar en Stock")
+    if btn_guardar_inv and inv_nombre.strip():
+        st.session_state.db_inventario.append({
+            "Artículo": inv_nombre, "Categoría": inv_cat, "Costo": inv_costo,
+            "Precio": inv_precio, "Stock": inv_stock, "Variante_Talla": inv_var, "Vencimiento": inv_vencimiento
+        })
+        st.sidebar.success("¡Mercancía añadida!")
+        st.rerun()
+
+# 3. PESTAÑAS OPERATIVAS (Módulos de Solución)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🛒 Caja Registradora (Vender)", 
+    "📓 Libro de Fiados y Apartados", 
+    "⏳ Alertas de Inventario y Vencimientos", 
+    "📈 Dashboard Financiero (Ganancias)"
+])
+
+# ==========================================
+# PESTAÑA 1: CAJA REGISTRADORA
+# ==========================================
+with tab1:
+    st.subheader("🛒 Registrar Nueva Venta")
+    df_inv_actual = pd.DataFrame(st.session_state.db_inventario)
+    
+    if not df_inv_actual.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            prod_seleccionado = st.selectbox(f"Selecciona el {terminos['prod']}:", df_inv_actual["Artículo"].unique())
+            variantes_disp = df_inv_actual[df_inv_actual["Artículo"] == prod_seleccionado]
+            variante_sel = st.selectbox(f"Variante ({terminos['var']}):", variantes_disp["Variante_Talla"].unique())
+            
+            # Filtrar el elemento correspondiente de manera segura
+            datos_item = variantes_disp[variantes_disp["Variante_Talla"] == variante_sel].iloc[0]
+            
+        with col2:
+            cantidad_vender = st.number_input("Cantidad a vender:", min_value=1, max_value=int(datos_item["Stock"]), value=1)
+            metodo_pago = st.selectbox("Método de Pago:", ["Efectivo", "Tarjeta", "Fiado / Crédito", "Apartado"])
+            
+            cliente_deuda = "Anónimo"
+            if metodo_pago in ["Fiado / Crédito", "Apartado"]:
+                cliente_deuda = st.text_input("Nombre de la persona que te debe ($):", value="")
+            
+        with col3:
+            st.markdown(f"**Precio Unitario:** ${datos_item['Precio']:,.2f}")
+            total_operacion = cantidad_vender * datos_item['Precio']
+            st.markdown(f"### Total a Cobrar: ${total_operacion:,.2f}")
+            
+            if datos_item["Stock"] <= 3:
+                st.warning(f"¡Alerta de Stock Bajo! Solo quedan {datos_item['Stock']} unidades.")
+
+        if st.button("🔴 Confirmar y Procesar Venta", use_container_width=True):
+            if metodo_pago in ["Fiado / Crédito", "Apartado"] and not cliente_deuda.strip():
+                st.error("❌ No puedes fiar o apartar sin colocar el nombre del cliente.")
+            else:
+                # 1. Registrar venta
+                nueva_venta = {
+                    "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Artículo": prod_seleccionado,
+                    "Variante": variante_sel,
+                    "Cantidad": cantidad_vender,
+                    "Costo_Total": cantidad_vender * datos_item["Costo"],
+                    "Venta_Total": total_operacion,
+                    "Ganancia_Neta": total_operacion - (cantidad_vender * datos_item["Costo"]),
+                    "Método": metodo_pago
+                }
+                st.session_state.db_ventas.append(nueva_venta)
+                
+                # 2. Restar del inventario real
+                for idx, item in enumerate(st.session_state.db_inventario):
+                    if item["Artículo"] == prod_seleccionado and item["Variante_Talla"] == variante_sel:
+                        st.session_state.db_inventario[idx]["Stock"] -= cantidad_vender
+                
+                # 3. Registrar cuenta por cobrar
+                if metodo_pago in ["Fiado / Crédito", "Apartado"]:
+                    st.session_state.db_fiados.append({
+                        "Fecha": datetime.now().strftime("%Y-%m-%d"),
+                        "Cliente": cliente_deuda,
+                        "Concepto": f"{cantidad_vender}x {prod_seleccionado} ({variante_sel})",
+                        "Monto": total_operacion,
+                        "Estado": "Pendiente",
+                        "Tipo": metodo_pago
+                    })
+                
+                st.success("✅ Operación procesada de forma nativa.")
+                st.rerun()
+    else:
+        st.info("No hay mercancía registrada. Agrégala en el panel izquierdo.")
+
+# ==========================================
+# PESTAÑA 2: LIBRO DE FIADOS Y APARTADOS
+# ==========================================
+with tab2:
+    st.subheader("📓 Control de Cuentas por Cobrar y Apartados")
+    if st.session_state.db_fiados:
+        df_fiados = pd.DataFrame(st.session_state.db_fiados)
+        monto_calle = df_fiados[df_fiados["Estado"] == "Pendiente"]["Monto"].sum()
+        st.error(f"⚠️ Dinero total en riesgo en la calle: **${monto_calle:,.2f}**")
+        st.dataframe(df_fiados, use_container_width=True)
+        
+        st.markdown("---")
+        st.write("🔧 **Registrar Cobros:**")
+        c1, c2 = st.columns(2)
+        
+        filtro_pendientes = [i for i, f in enumerate(st.session_state.db_fiados) if f["Estado"] == "Pendiente"]
+        if filtro_pendientes:
+            idx_cobrar = c1.selectbox("Deuda a liquidar:", filtro_pendientes, format_func=lambda x: f"{st.session_state.db_fiados[x]['Cliente']} - ${st.session_state.db_fiados[x]['Monto']} [{st.session_state.db_fiados[x]['Tipo']}]")
+            if c2.button("Saldar Deuda Completamente", use_container_width=True):
+                st.session_state.db_fiados[idx_cobrar]["Estado"] = "Saldado"
+                st.success("¡Cobro guardado!")
+                st.rerun()
         else:
-            # Detectar la codificación del archivo de forma automática (evita errores de tildes o la Ñ)
-            bytes_data = file.read(10000)
-            file.seek(0)
-            encoding_detectada = chardet.detect(bytes_data)['encoding'] or 'utf-8'
-            return pd.read_csv(file, encoding=encoding_detectada, sep=None, engine='python')
-    except Exception as e:
-        st.error(f"Error al procesar la estructura del archivo: {e}")
-        return None
+            st.success("¡Cuentas al día!")
+    else:
+        st.success("🎉 ¡Nadie debe dinero en este turno!")
 
-# Función para compilar el PDF de auditoría de negocio
-def generar_pdf_universal(df, nombre_negocio, c_prod, c_cat, c_cant, c_total, ingresos, unidades, articulos, ticket):
-    pdf = FPDF()
-    pdf.add_page()
+# ==========================================
+# PESTAÑA 3: ALERTAS DE INVENTARIO Y VENCIMIENTOS
+# ==========================================
+with tab3:
+    st.subheader("⏳ Módulo Antimerma de Productos y Tallas")
+    df_inv = pd.DataFrame(st.session_state.db_inventario)
     
-    # Banner ejecutivo superior
-    pdf.set_fill_color(31, 41, 55) # Gris Oxford Industrial
-    pdf.rect(0, 0, 210, 38, 'F')
-    
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, f"REPORTE OPERATIVO DE VENTAS", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 11)
-    pdf.cell(0, 8, f"Establecimiento: {nombre_negocio}", ln=True, align='C')
-    
-    pdf.ln(20)
-    pdf.set_text_color(0, 0, 0)
-    
-    # KPIs Financieros
-    pdf.set_font("Arial", 'B', 13)
-    pdf.cell(0, 8, "Métricas Clave de Rendimiento", ln=True)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(4)
-    
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(95, 8, f" Volumen de Facturacion Total: ${ingresos:,.2f}", border=1)
-    pdf.cell(95, 8, f" Volumen de Articulos Despachados: {unidades:,}", border=1, ln=True)
-    pdf.cell(95, 8, f" Variedad de Catalogo Vendido: {articulos}", border=1)
-    pdf.cell(95, 8, f" Ticket Promedio por Transaccion: ${ticket:,.2f}", border=1, ln=True)
-    
-    pdf.ln(12)
-    
-    # Tabla de Movimientos
-    pdf.set_font("Arial", 'B', 13)
-    pdf.cell(0, 8, "Auditoría de Inventario Vendido (Top 15)", ln=True)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(4)
-    
-    # Encabezados Adaptativos de Tabla
-    pdf.set_font("Arial", 'B', 9)
-    pdf.set_fill_color(243, 244, 246)
-    pdf.cell(65, 8, f"Descripción ({c_prod})", border=1, fill=True)
-    pdf.cell(50, 8, f"Categoría ({c_cat})", border=1, fill=True)
-    pdf.cell(35, 8, "Cantidades", border=1, fill=True)
-    pdf.cell(40, 8, "Monto Total", border=1, fill=True, ln=True)
-    
-    # Filas de la tabla
-    pdf.set_font("Arial", '', 9)
-    for _, row in df.head(15).iterrows():
-        txt_p = str(row[c_prod])[:32]
-        txt_c = str(row[c_cat])[:24]
-        cant_v = float(row[c_cant]) if pd.notnull(row[c_cant]) else 0.0
-        tot_v = float(row[c_total]) if pd.notnull(row[c_total]) else 0.0
+    col_inv1, col_inv2 = st.columns(2)
+    with col_inv1:
+        st.warning("📉 **Control de Stock Muerto (Sin movimiento):**")
         
-        pdf.cell(65, 7, txt_p, border=1)
-        pdf.cell(50, 7, txt_c, border=1)
-        pdf.cell(35, 7, f"{cant_v:,}", border=1)
-        pdf.cell(40, 7, f"${tot_v:,.2f}", border=1, ln=True)
+        # GRÁFICO NATIVO DE STREAMLIT (No requiere instalar nada)
+        df_chart = df_inv.groupby("Artículo")["Stock"].sum()
+        st.bar_chart(df_chart)
         
-    return pdf.output()
-
-# --- INTERFAZ DE CONFIGURACIÓN LATERAL ---
-st.sidebar.header("⚙️ Configuración del Sistema")
-nombre_comercio = st.sidebar.text_input("Nombre de tu Negocio:", value="Mi Negocio")
-
-# Carga de archivos independiente
-archivo = st.sidebar.file_uploader("Sube tu archivo de ventas (Excel o CSV)", type=["csv", "xlsx"])
-
-if archivo is not None:
-    df_origen = cargar_datos_seguro(archivo)
-    
-    if df_origen is not None:
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🔗 Mapeo de Columnas Inteligente")
-        st.sidebar.write("Indícale al sistema qué columna representa cada dato:")
-        
-        # Selectores dinámicos basados en las columnas REALES del archivo del usuario
-        lista_columnas = list(df_origen.columns)
-        
-        col_producto = st.sidebar.selectbox("¿Cuál es el Nombre del Producto/Medicamento/Artículo?", lista_columnas)
-        col_categoria = st.sidebar.selectbox("¿Cuál es la Categoría/Laboratorio/Familia?", lista_columnas)
-        col_cantidad = st.sidebar.selectbox("¿Cuál es la Cantidad Vendida?", lista_columnas)
-        col_total = st.sidebar.selectbox("¿Cuál es el Total Dinero ($) de la venta?", lista_columnas)
-        
-        # Forzar conversión numérica de columnas críticas para evitar caídas de gráficos
-        df_origen[col_cantidad] = pd.to_numeric(df_origen[col_cantidad], errors='coerce').fillna(0)
-        df_origen[col_total] = pd.to_numeric(df_origen[col_total], errors='coerce').fillna(0)
-        
-        # Filtro de categorías interactivo
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🎯 Filtro de Datos")
-        opciones_cat = df_origen[col_categoria].dropna().unique()
-        categorias_seleccionadas = st.sidebar.multiselect("Filtrar por categorías:", opciones_cat, default=opciones_cat)
-        
-        # Procesar DataFrame Filtrado
-        df_filtrado = df_origen[df_origen[col_categoria].isin(categorias_seleccionadas)]
-        
-        # --- PROCESAMIENTO FINANCIERO DE MÉTRICAS ---
-        m_ingresos = df_filtrado[col_total].sum()
-        m_unidades = df_filtrado[col_cantidad].sum()
-        m_articulos = df_filtrado[col_producto].nunique()
-        m_ticket = df_filtrado[col_total].mean() if len(df_filtrado) > 0 else 0
-        
-        # --- BOTÓN DE DESCARGA PDF ---
-        st.sidebar.markdown("---")
-        try:
-            binario_pdf = generar_pdf_universal(
-                df_filtrado, nombre_comercio, col_producto, col_categoria, 
-                col_cantidad, col_total, m_ingresos, m_unidades, m_articulos, m_ticket
-            )
-            st.sidebar.download_button(
-                label="🖨️ Descargar Reporte en PDF",
-                data=bytes(binario_pdf),
-                file_name=f"Reporte_{nombre_comercio.replace(' ', '_')}.pdf",
-                mime="application/pdf"
-            )
-        except Exception as e:
-            st.sidebar.error(f"Error al estructurar reporte PDF: {e}")
+    with col_inv2:
+        st.error("📆 **Alertas de Vencimiento de Lotes:**")
+        if terminos["mostrar_vencimiento"]:
+            hoy = datetime.now().date()
+            limite_alerta = hoy + timedelta(days=30)
+            df_vencimiento = df_inv[df_inv["Vencimiento"].notnull()]
+            df_criticos = df_vencimiento[df_vencimiento["Vencimiento"] <= limite_alerta]
             
-        # --- DISEÑO DASHBOARD VISUAL ---
-        st.subheader(f"📈 Rendimiento Comercial de: {nombre_comercio}")
+            if not df_criticos.empty:
+                st.write("❌ **Mercancía próxima a expirar (Menos de 30 días):**")
+                for _, fila in df_criticos.iterrows():
+                    st.write(f"⚠️ **{fila['Artículo']}** ({fila['Variante_Talla']}) - Stock: {fila['Stock']} unds - Vence: {fila['Vencimiento']}")
+            else:
+                st.success("No hay mermas por vencimiento este mes.")
+        else:
+            st.info("Este giro de negocio no deprecia por caducidad química.")
+
+# ==========================================
+# PESTAÑA 4: DASHBOARD FINANCIERO
+# ==========================================
+with tab4:
+    st.subheader("📊 Análisis Neto de Ganancias")
+    if st.session_state.db_ventas:
+        df_ventas = pd.DataFrame(st.session_state.db_ventas)
         
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1:
-            st.metric("Facturación Total", f"${m_ingresos:,.2f}")
+            st.metric("Venta Total en Caja", f"${df_ventas['Venta_Total'].sum():,.2f}")
         with kpi2:
-            st.metric("Volumen Unidades Vendidas", f"{m_unidades:,.0f}")
+            st.metric("Inversión de Proveedores", f"${df_ventas['Costo_Total'].sum():,.2f}")
         with kpi3:
-            st.metric("Artículos Únicos Despachados", f"{m_articulos:,}")
-        with kpi4:
-            st.metric("Ticket Promedio de Compra", f"${m_ticket:,.2f}")
+            margen_p = (df_ventas['Ganancia_Neta'].sum() / df_ventas['Venta_Total'].sum()) * 100
+            st.metric("Ganancia Real Líquida", f"${df_ventas['Ganancia_Neta'].sum():,.2f}", delta=f"{margen_p:.1f}% Margen")
             
         st.markdown("---")
-        
-        # --- GRÁFICOS ANALÍTICOS ---
-        fila_graficos_1 = st.columns(2)
-        
-        with fila_graficos_1[0]:
-            st.subheader("💰 Distribución de Ingresos por Categoría")
-            ventas_por_cat = df_filtrado.groupby(col_categoria)[col_total].sum().reset_index()
-            fig_barras = px.bar(ventas_por_cat, x=col_categoria, y=col_total, color=col_categoria, text_auto='.2s', template="plotly_white")
-            st.plotly_chart(fig_barras, use_container_width=True)
-            
-        with fila_graficos_1[1]:
-            st.subheader("🏆 Top Productos Más Rentables")
-            top_productos = df_filtrado.groupby(col_producto)[col_total].sum().reset_index().sort_values(by=col_total, ascending=False).head(10)
-            fig_tarta = px.pie(top_productos, values=col_total, names=col_producto, hole=0.3, color_discrete_sequence=px.colors.qualitative.Safe)
-            st.plotly_chart(fig_tarta, use_container_width=True)
-            
-        st.markdown("---")
-        st.subheader("📋 Consola Detallada de Datos Operativos")
-        st.dataframe(df_filtrado[[col_producto, col_categoria, col_cantidad, col_total]], use_container_width=True)
-        
-else:
-    # Estado inicial cuando no hay datos
-    st.info("💡 **Instrucciones para iniciar:** Sube cualquier archivo CSV o Excel de ventas en el panel izquierdo. No importa el nombre de tus columnas, tú mismo las asignarás en la pantalla.")
+        st.write("📋 **Historial de Operaciones del Turno Actual:**")
+        st.dataframe(df_ventas[["Fecha", "Artículo", "Variante", "Cantidad", "Venta_Total", "Ganancia_Neta", "Método"]], use_container_width=True)
+    else:
+        st.info("Sin ventas registradas en este turno.")
