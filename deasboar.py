@@ -3,198 +3,253 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-# 1. CONFIGURACIÓN DEL SISTEMA OPERATIVO WEB
-st.set_page_config(page_title="Central de Paneles Empresariales", layout="wide", page_icon="🏢")
+# 1. CONFIGURACIÓN DEL SISTEMA OPERATIVO CENTRAL
+st.set_page_config(page_title="ERP Multi-Negocio Todo-En-Uno", layout="wide", page_icon="🏢")
 
-# --- MOTOR DE PERSISTENCIA NATIVA (Bases de datos independientes) ---
-FICHERO_INV = "inv_central.csv"
-FICHERO_VEN = "ven_central.csv"
+st.title("🏬 Sistema ERP Comercial Todo-En-Uno")
+st.markdown("Plataforma unificada: Controla Almacén, Boutique de Ropa, Celulares y Minimarket desde un solo lugar.")
 
-def guardar_cambios(df, path):
-    df.to_csv(path, index=False)
+# --- MOTOR DE BASE DE DATOS LOCAL (Persistencia en el Servidor) ---
+FICHERO_INV = "inventario_central.csv"
+FICHERO_VEN = "ventas_central.csv"
+FICHERO_FIA = "fiados_central.csv"
 
-def iniciar_base_datos(path, cols):
-    if os.path.exists(path):
-        try: return pd.read_csv(path)
-        except: return pd.DataFrame(columns=cols)
-    return pd.DataFrame(columns=cols)
+def guardar_datos(df, archivo):
+    df.to_csv(archivo, index=False)
 
-# Inicializar almacenamiento en disco duro del servidor
-if 'db_i' not in st.session_state:
-    st.session_state.db_i = iniciar_base_datos(FICHERO_INV, ["ID", "Item", "Giro", "Grupo", "Especifico", "Costo", "Precio", "Stock", "Extra"])
-    # Datos iniciales para que el sistema arranque con datos demostrativos en cada panel
-    if st.session_state.db_i.empty:
-        st.session_state.db_i = pd.DataFrame([
-            {"ID": "R01", "Item": "Jeans Súper Slim", "Giro": "Boutique Ropa", "Grupo": "Pantalones", "Especifico": "Talla M / Azul", "Costo": 400, "Precio": 1100, "Stock": 25, "Extra": "Exhibición"},
-            {"ID": "C01", "Item": "Saco Arroz Selecto", "Giro": "Colmado / Bodega", "Grupo": "Granos", "Especifico": "Saco 125 Lb", "Costo": 2100, "Precio": 2700, "Stock": 14, "Extra": "Vence: 2026-10-12"},
-            {"ID": "A01", "Item": "Lote Zapatos Running", "Giro": "Almacén Mayorista", "Grupo": "Calzado", "Especifico": "Caja x24 Pares", "Costo": 12000, "Precio": 19000, "Stock": 8, "Extra": "Rack Sector C"}
+def cargar_datos(archivo, columnas_defecto):
+    if os.path.exists(archivo):
+        try: return pd.read_csv(archivo)
+        except: return pd.DataFrame(columns=columnas_defecto)
+    return pd.DataFrame(columns=columnas_defecto)
+
+# Inicializar las tablas del sistema
+if 'db_inv' not in st.session_state:
+    df_i = cargar_datos(FICHERO_INV, ["Artículo", "Negocio/Área", "Categoría", "Costo", "Precio", "Stock", "Variante", "Ubicación", "Vencimiento"])
+    if df_i.empty:
+        # Datos semilla para demostrar que conviven todos los negocios juntos
+        df_i = pd.DataFrame([
+            {"Artículo": "Jeans Slim Fit", "Negocio/Área": "Boutique (Ropa/Calzado)", "Categoría": "Pantalones", "Costo": 400.0, "Precio": 1100.0, "Stock": 30, "Variante": "Talla M / Azul", "Ubicación": "Tramo Exhibición", "Vencimiento": "N/A"},
+            {"Artículo": "iPhone 13 128GB", "Negocio/Área": "Tecnología & Celulares", "Categoría": "Smartphones", "Costo": 18000.0, "Precio": 25000.0, "Stock": 5, "Variante": "Negro / Libre", "Ubicación": "Vitrina Principal", "Vencimiento": "N/A"},
+            {"Artículo": "Saco de Arroz 125lb", "Negocio/Área": "Minimarket & Colmado", "Categoría": "Granos", "Costo": 2200.0, "Precio": 2800.0, "Stock": 15, "Variante": "Premium", "Ubicación": "Almacén de Fondo", "Vencimiento": "2026-12-31"},
+            {"Artículo": "Amoxicilina 500mg", "Negocio/Área": "Farmacia & Cosméticos", "Categoría": "Antibióticos", "Costo": 100.0, "Precio": 250.0, "Stock": 50, "Variante": "Caja x30", "Ubicación": "Estante A", "Vencimiento": "2026-08-20"}
         ])
-if 'db_v' not in st.session_state:
-    st.session_state.db_v = iniciar_base_datos(FICHERO_VEN, ["Fecha", "Item", "Giro", "Cantidad", "Costo_T", "Venta_T", "Ganancia", "Metodo"])
+    st.session_state.db_inv = df_i
+
+if 'db_ven' not in st.session_state:
+    st.session_state.db_ven = cargar_datos(FICHERO_VEN, ["Fecha", "Artículo", "Negocio/Área", "Cantidad", "Costo_Total", "Venta_Total", "Ganancia_Neta", "Método"])
+
+if 'db_fia' not in st.session_state:
+    st.session_state.db_fia = cargar_datos(FICHERO_FIA, ["Fecha", "Cliente", "Concepto", "Monto", "Estado"])
 
 # =========================================================================
-# 2. SELECTOR MAESTRO DE CONTROL: CAMBIA EL PANEL POR COMPLETO
+# 2. PANEL LATERAL: CONTROL DE ENTRADA DE MERCANCÍA PARA CUALQUIER RUBRO
 # =========================================================================
-st.sidebar.image("https://flaticon.com", width=70)
-st.sidebar.header("🎛️ PANEL DE CONTROL")
-interfaz_activa = st.sidebar.radio(
-    "Selecciona el Entorno del Dashboard:",
-    ["🛍️ PANEL: TIENDA DE ROPA / CALZADO", "🏪 PANEL: COLMADO / MINIMARKET", "📦 PANEL: ALMACÉN LOGÍSTICO / DEPOSITOS"]
-)
+st.sidebar.header("⚙️ Entrada de Mercancía Universal")
+st.sidebar.write("Agrega inventario a cualquier sección del negocio:")
 
-st.sidebar.markdown("---")
+with st.sidebar.form("form_universal", clear_on_submit=True):
+    area_destino = st.selectbox(
+        "¿A qué área va este producto?",
+        ["Boutique (Ropa/Calzado)", "Tecnología & Celulares", "Minimarket & Colmado", "Farmacia & Cosméticos", "Almacén Central / Depósito"]
+    )
+    
+    # Textos de ayuda dinámicos según el área seleccionada
+    ayuda = {
+        "Boutique (Ropa/Calzado)": {"cat": "Blusas, Zapatos, Jeans", "var": "Talla M / Color Azul"},
+        "Tecnología & Celulares": {"cat": "Smartphones, Cargadores", "var": "128GB / Color Negro"},
+        "Minimarket & Colmado": {"cat": "Granos, Bebidas, Enlatados", "var": "Saco 125lb, Litro"},
+        "Farmacia & Cosméticos": {"cat": "Analgésicos, Cremas", "var": "500mg, Frasco 100ml"},
+        "Almacén Central / Depósito": {"cat": "Cajas Máster, Pallets", "var": "Lote Completo"}
+    }[area_destino]
+    
+    in_nombre = st.text_input("Nombre del Artículo:")
+    in_cat = st.text_input(f"Categoría ({ayuda['cat']}):", value="General")
+    in_var = st.text_input(f"Variante/Detalle ({ayuda['var']}):", value="N/A")
+    in_ubica = st.text_input("Ubicación Física (Ej: Estante B, Vitrina, Rack 3):", value="Mostrador")
+    
+    col_p = st.columns(2)
+    in_costo = col_p.number_input("Costo Fábrica ($):", min_value=0.0, step=10.0)
+    in_precio = col_p.number_input("Precio Venta ($):", min_value=0.0, step=10.0)
+    
+    in_stock = st.number_input("Cantidad que ingresa:", min_value=1, step=1)
+    
+    # Campo de vencimiento inteligente (solo si es comida o medicina)
+    in_vence = "N/A"
+    if area_destino in ["Minimarket & Colmado", "Farmacia & Cosméticos"]:
+        if st.checkbox("¿Tiene fecha de vencimiento?"):
+            in_vence = str(st.date_input("Vencimiento:", value=datetime.now().date() + timedelta(days=120)))
+            
+    if st.form_submit_button("📥 Registrar en Inventario Global"):
+        if in_nombre.strip():
+            nueva_fila = pd.DataFrame([{
+                "Artículo": in_nombre, "Negocio/Área": area_destino, "Categoría": in_cat,
+                "Costo": in_costo, "Precio": in_precio, "Stock": in_stock, "Variante": in_var,
+                "Ubicación": in_ubica, "Vencimiento": in_vence
+            }])
+            st.session_state.db_inv = pd.concat([st.session_state.db_inv, nueva_fila], ignore_index=True)
+            guardar_datos(st.session_state.db_inv, FICHERO_INV)
+            st.sidebar.success("¡Guardado en el sistema unificado!")
+            st.rerun()
 
 # =========================================================================
-# 🏢 DISEÑO INTERFAZ 1: TIENDA DE ROPA / CALZADO
+# 3. PESTAÑAS OPERATIVAS DEL ECOSISTEMA "TODO EN UNO"
 # =========================================================================
-if interfaz_activa == "🛍️ PANEL: TIENDA DE ROPA / CALZADO":
-    st.title("🛍️ Dashboard Ejecutivo de Boutique & Moda")
-    st.markdown("Control de tallas, marcas, aparadores, colecciones estacionales y ticket promedio.")
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🛒 Terminal de Ventas (Caja)", 
+    "📓 Cuentas por Cobrar (Fiados)", 
+    "📦 Stock por Negocio",
+    "⏳ Alertas de Mermas",
+    "📈 Contabilidad General"
+])
+
+# --- PESTAÑA 1: CAJA REGISTRADORA UNIFICADA ---
+with tab1:
+    st.subheader("🛒 Punto de Venta Universal (Factura cualquier artículo)")
+    df_i = st.session_state.db_inv
     
-    # Filtrar solo datos de ropa
-    df_ropa = st.session_state.db_i[st.session_state.db_i["Giro"] == "Boutique Ropa"]
-    
-    # Diseño de Pestañas exclusivas para Ropa
-    p1, p2, p3 = st.tabs(["📊 Métricas de Moda", "➕ Ingresar Prenda/Calzado", "🛒 Punto de Venta"])
-    
-    with p1:
-        st.subheader("Análisis de Tendencias y Exhibición")
+    if not df_i.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            area_sel = st.selectbox("¿De qué área es la venta?", df_i["Negocio/Área"].unique())
+            df_filtrado_area = df_i[df_i["Negocio/Área"] == area_sel]
+            
+            prod_sel = st.selectbox("Selecciona el Artículo:", df_filtrado_area["Artículo"].unique())
+            df_vars = df_filtrado_area[df_filtrado_area["Artículo"] == prod_sel]
+            var_sel = st.selectbox("Selecciona la Variante/Talla:", df_vars["Variante"].unique())
+            
+            datos_item = df_vars[df_vars["Variante"] == var_sel].iloc
+            
+        with col2:
+            max_existencias = int(datos_item["Stock"]) if int(datos_item["Stock"]) > 0 else 1
+            cant_vender = st.number_input("Cantidad a vender:", min_value=1, max_value=max_existencias, value=1)
+            metodo_p = st.selectbox("Método de Pago:", ["Efectivo", "Tarjeta / Transferencia", "Fiado / Crédito", "Apartado"])
+            
+            cliente_deuda = ""
+            if metodo_p in ["Fiado / Crédito", "Apartado"]:
+                cliente_deuda = st.text_input("Nombre del Cliente (Deudor):")
+                
+        with col3:
+            st.markdown(f"**Ubicación en Tienda:** `{datos_item['Ubicación']}`")
+            st.markdown(f"**Precio Unitario:** ${datos_item['Precio']:,.2f}")
+            total_operacion = cant_vender * datos_item['Precio']
+            st.markdown(f"### Total a Cobrar: ${total_operacion:,.2f}")
+            
+            if datos_item["Stock"] <= 0:
+                st.error("❌ No hay existencias en inventario.")
+            elif datos_item["Stock"] <= 3:
+                st.warning(f"⚠️ Stock Bajo: Solo quedan {datos_item['Stock']} unidades.")
+
+        if st.button("🔴 Confirmar y Procesar Venta", use_container_width=True):
+            if datos_item["Stock"] <= 0:
+                st.error("Operación abortada: Artículo sin stock.")
+            elif metodo_p in ["Fiado / Crédito", "Apartado"] and not cliente_deuda.strip():
+                st.error("❌ Error: Coloca el nombre del cliente para registrar el fiado o apartado.")
+            else:
+                # 1. Descontar del inventario central
+                for idx, fila in df_i.iterrows():
+                    if fila["Artículo"] == prod_sel and fila["Variante"] == var_sel and fila["Negocio/Área"] == area_sel:
+                        st.session_state.db_inv.at[idx, "Stock"] -= cant_vender
+                guardar_datos(st.session_state.db_inv, FICHERO_INV)
+                
+                # 2. Guardar reporte de venta
+                v_costo = cant_vender * datos_item["Costo"]
+                nueva_v = pd.DataFrame([{
+                    "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "Artículo": prod_sel, "Negocio/Área": area_sel,
+                    "Cantidad": cant_vender, "Costo_Total": v_costo, "Venta_Total": total_operacion,
+                    "Ganancia_Neta": total_operacion - v_costo, "Método": metodo_p
+                }])
+                st.session_state.db_ven = pd.concat([st.session_state.db_ven, nueva_v], ignore_index=True)
+                guardar_datos(st.session_state.db_ven, FICHERO_VEN)
+                
+                # 3. Mandar al libro de fiados si aplica
+                if metodo_p in ["Fiado / Crédito", "Apartado"]:
+                    nueva_d = pd.DataFrame([{
+                        "Fecha": datetime.now().strftime("%Y-%m-%d"), "Cliente": cliente_deuda,
+                        "Concepto": f"{cant_vender}x {prod_sel} ({var_sel}) - [{area_sel}]",
+                        "Monto": total_operacion, "Estado": "Pendiente"
+                    }])
+                    st.session_state.db_fia = pd.concat([st.session_state.db_fia, nueva_d], ignore_index=True)
+                    guardar_datos(st.session_state.db_fia, FICHERO_FIA)
+                    
+                st.success("✅ Venta procesada en el sistema central.")
+                st.rerun()
+    else:
+        st.info("El inventario global está vacío.")
+
+# --- PESTAÑA 2: CUENTAS POR COBRAR CENTRALIZADAS ---
+with tab2:
+    st.subheader("📓 Libro Mayor de Fiados y Apartados (Todos los negocios)")
+    df_f = st.session_state.db_fia
+    if not df_f.empty:
+        st.error(f"⚠️ Dinero total en la calle: **${df_f[df_f['Estado']=='Pendiente']['Monto'].sum():,.2f}**")
+        st.dataframe(df_f, use_container_width=True)
+        
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        pendientes = df_f[df_f["Estado"] == "Pendiente"].index.tolist()
+        if pendientes:
+            idx_c = c1.selectbox("Selecciona la cuenta a cobrar:", pendientes, format_func=lambda x: f"{df_f.at[x, 'Cliente']} - ${df_f.at[x, 'Monto']} ({df_f.at[x, 'Concepto']})")
+            if c2.button("✔️ Registrar Cobro / Liquidación", use_container_width=True):
+                st.session_state.db_fia.at[idx_c, "Estado"] = "Saldado"
+                guardar_datos(st.session_state.db_fia, FICHERO_FIA)
+                st.success("¡Cuenta cobrada!"); st.rerun()
+        else:
+            st.success("🎉 ¡Todas las cuentas están cobradas!")
+    else:
+        st.success("No hay deudas registradas.")
+
+# --- PESTAÑA 3: INVENTARIO POR NEGOCIO ---
+with tab3:
+    st.subheader("📦 Distribución Física del Inventario Global")
+    df_i = st.session_state.db_inv
+    if not df_i.empty:
+        # Gráfico nativo para ver qué negocio tiene más stock
+        chart_data = df_i.groupby("Negocio/Área")["Stock"].sum()
+        st.bar_chart(chart_data)
+        
+        # Filtro de visualización
+        filtro_area = st.selectbox("Filtrar tabla por área comercial:", ["Mostrar Todo"] + list(df_i["Negocio/Área"].unique()))
+        if filtro_area == "Mostrar Todo":
+            st.dataframe(df_i, use_container_width=True)
+        else:
+            st.dataframe(df_i[df_i["Negocio/Área"] == filtro_area], use_container_width=True)
+
+# --- PESTAÑA 4: ALERTAS DE MERMAS (COMIDA Y MEDICINA) ---
+with tab4:
+    st.subheader("⏳ Control de Mermas por Caducidad (Minimarket y Farmacia)")
+    df_i = st.session_state.db_inv
+    if not df_i.empty:
+        df_vence = df_i[df_i["Vencimiento"] != "N/A"].copy()
+        if not df_vence.empty:
+            df_vence["Vencimiento_DT"] = pd.to_datetime(df_vence["Vencimiento"], errors='coerce').dt.date
+            limite = datetime.now().date() + timedelta(days=30)
+            
+            alertas = df_vence[df_vence["Vencimiento_DT"] <= limite]
+            if not alertas.empty:
+                st.error("❌ **¡Atención! Estos lotes vencen en menos de 30 días. Sácalos a liquidación:**")
+                st.dataframe(alertas[["Artículo", "Negocio/Área", "Stock", "Vencimiento", "Ubicación"]], use_container_width=True)
+            else:
+                st.success("🎉 Cero pérdidas por caducidad en los próximos 30 días.")
+        else:
+            st.info("No hay productos con fecha de vencimiento configurados.")
+
+# --- PESTAÑA 5: CONTABILIDAD GENERAL GENERALIZADA ---
+with tab5:
+    st.subheader("📊 Libro de Contabilidad y Márgenes de Todo el Grupo")
+    df_v = st.session_state.db_ven
+    if not df_v.empty:
         k1, k2, k3 = st.columns(3)
-        k1.metric("Prendas Totales en Rack", f"{df_ropa['Stock'].sum()} Unidades")
-        k2.metric("Inversión en Vitrinas", f"${df_ropa['Costo'].sum():,.2f}")
-        k3.metric("Variedad de Modelos", len(df_ropa["Item"].unique()))
+        k1.metric("Venta Bruta Combinada", f"${df_v['Venta_Total'].sum():,.2f}")
+        k2.metric("Costo Inversión de Reposición", f"${df_v['Costo_Total'].sum():,.2f}")
+        
+        ganancia_combinada = df_v['Ganancia_Neta'].sum()
+        ratio = (ganancia_combinada / df_v['Venta_Total'].sum() * 100) if df_v['Venta_Total'].sum() > 0 else 0
+        k3.metric("Ganancia Neta Líquida Total", f"${ganancia_combinada:,.2f}", delta=f"{ratio:.1f}% Margen Global")
         
         st.markdown("---")
-        st.write("📈 **Nivel de Stock por Talla / Modelo:**")
-        if not df_ropa.empty:
-            chart_ropa = df_ropa.groupby("Especifico")["Stock"].sum()
-            st.bar_chart(chart_ropa)
-            st.dataframe(df_ropa[["Item", "Grupo", "Especifico", "Stock", "Precio", "Extra"]], use_container_width=True)
-            
-    with p2:
-        st.subheader("Añadir Nueva Colección al Aparador")
-        with st.form("form_ropa", clear_on_submit=True):
-            f_nom = st.text_input("Nombre de la Prenda / Calzado:")
-            f_cat = st.selectbox("Colección / Departamento:", ["Pantalones", "Camisas", "Calzado", "Vestidos", "Accesorios"])
-            f_esp = st.text_input("Detalle de Variantes (Ej: Talla L / Color Negro):")
-            f_cos = st.number_input("Costo Fábrica ($):", min_value=0.0)
-            f_pre = st.number_input("Precio Vitrina ($):", min_value=0.0)
-            f_cant = st.number_input("Unidades que entran al Rack:", min_value=1)
-            f_ex = st.selectbox("Área Visual:", ["Maniquí Entrada", "Perchero Principal", "Caja Reserva"])
-            
-            if st.form_submit_button("📥 Colocar en Exhibición") and f_nom.strip():
-                nueva_p = pd.DataFrame([{"ID": "R", "Item": f_nom, "Giro": "Boutique Ropa", "Grupo": f_cat, "Especifico": f_esp, "Costo": f_cos, "Precio": f_pre, "Stock": f_cant, "Extra": f_ex}])
-                st.session_state.db_i = pd.concat([st.session_state.db_i, nueva_p], ignore_index=True)
-                guardar_cambios(st.session_state.db_i, FICHERO_INV)
-                st.success("¡Prenda indexada!"); st.rerun()
-                
-    with p3:
-        st.subheader("Pasarela de Pagos (POS Boutique)")
-        if not df_ropa.empty:
-            sel_p = st.selectbox("Selecciona Prenda:", df_ropa["Item"].unique(), key="s_r")
-            items_v = df_ropa[df_ropa["Item"] == sel_p]
-            sel_v = st.selectbox("Selecciona Variante:", items_v["Especifico"].unique(), key="v_r")
-            row_r = items_v[items_v["Especifico"] == sel_v].iloc[0]
-            
-            c_vendar = st.number_input("Cantidad:", min_value=1, max_value=int(row_r["Stock"]), value=1, key="c_r")
-            m_pago = st.selectbox("Forma de Cobro:", ["Efectivo", "Tarjeta", "Apartado de Prenda"], key="m_r")
-            
-            st.markdown(f"### Total Factura: ${c_vendar * row_r['Precio']:,.2f}")
-            if st.button("🔴 Confirmar Venta de Mostrador", key="b_r"):
-                # Operación descuento e historial
-                v_costo = c_vendar * row_r["Costo"]
-                v_total = c_vendar * row_r["Precio"]
-                nueva_v = pd.DataFrame([{"Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "Item": sel_p, "Giro": "Boutique Ropa", "Cantidad": c_vendar, "Costo_T": v_costo, "Venta_T": v_total, "Ganancia": v_total - v_costo, "Metodo": m_pago}])
-                st.session_state.db_v = pd.concat([st.session_state.db_v, nueva_v], ignore_index=True)
-                guardar_cambios(st.session_state.db_v, FICHERO_VEN)
-                
-                for idx, fila in st.session_state.db_i.iterrows():
-                    if fila["Item"] == sel_p and fila["Especifico"] == sel_v:
-                        st.session_state.db_i.at[idx, "Stock"] -= c_vendar
-                guardar_cambios(st.session_state.db_i, FICHERO_INV)
-                st.success("Venta procesada"); st.rerun()
-
-# =========================================================================
-# 🏪 DISEÑO INTERFAZ 2: COLMADO / MINIMARKET
-# =========================================================================
-elif interfaz_activa == "🏪 PANEL: COLMADO / MINIMARKET":
-    st.title("🏪 Dashboard de Control para Colmados & Minimarkets")
-    st.markdown("Monitoreo agresivo de fiados, mermas de alimentos, inventarios rápidos y pesos.")
-    
-    df_col = st.session_state.db_i[st.session_state.db_i["Giro"] == "Colmado / Bodega"]
-    
-    p1, p2, p3 = st.tabs(["📓 Despacho e Historial Diario", "🌾 Control de Sacos / Abastecimiento", "🚨 Alertas de Vencimiento"])
-    
-    with p1:
-        st.subheader("Ventas del Mostrador Diario")
-        k1, k2 = st.columns(2)
-        df_v_col = st.session_state.db_v[st.session_state.db_v["Giro"] == "Boutique Ropa"] # Simulado/Real
-        k1.metric("Venta Bruta del Día", f"${df_col['Precio'].sum():,.2f}")
-        k2.metric("Libras/Unidades en Tramo", int(df_col['Stock'].sum()))
-        
-        st.markdown("---")
-        st.write("📋 **Productos Disponibles en Tramo:**")
-        st.dataframe(df_col[["Item", "Grupo", "Especifico", "Stock", "Precio", "Extra"]], use_container_width=True)
-        
-    with p2:
-        st.subheader("Registrar Compra al Mayorista")
-        with st.form("form_colmado", clear_on_submit=True):
-            f_nom = st.text_input("Nombre del Artículo / Vívere:")
-            f_cat = st.selectbox("Rubro Alimentario:", ["Granos", "Bebidas", "Limpieza", "Embutidos", "Enlatados"])
-            f_esp = st.text_input("Formato / Unidad (Ej: Saco 100lb, Galón, Caja):")
-            f_cos = st.number_input("Costo Distribuidor ($):", min_value=0.0)
-            f_pre = st.number_input("Precio Detalle ($):", min_value=0.0)
-            f_cant = st.number_input("Volumen / Cantidad:", min_value=1)
-            f_ex = st.text_input("Fecha de Vencimiento (AAAA-MM-DD):", value="N/A")
-            
-            if st.form_submit_button("📥 Registrar Entrada de Almacén") and f_nom.strip():
-                nueva_p = pd.DataFrame([{"ID": "C", "Item": f_nom, "Giro": "Colmado / Bodega", "Grupo": f_cat, "Especifico": f_esp, "Costo": f_cos, "Precio": f_pre, "Stock": f_cant, "Extra": f_ex}])
-                st.session_state.db_i = pd.concat([st.session_state.db_i, nueva_p], ignore_index=True)
-                guardar_cambios(st.session_state.db_i, FICHERO_INV)
-                st.success("¡Vívere guardado!"); st.rerun()
-                
-    with p3:
-        st.subheader("Auditoría de Alertas Críticas")
-        st.warning("⚠️ **Control de Caducidad de Lotes:**")
-        st.write(df_col[["Item", "Especifico", "Stock", "Extra"]])
-
-# =========================================================================
-# 📦 DISEÑO INTERFAZ 3: ALMACÉN LOGÍSTICO / DEPOSITOS
-# =========================================================================
-else:
-    st.title("📦 Panel Logístico de Almacenes & Centros de Distribución")
-    st.markdown("Indicadores de volumen mayorista, control de bultos, pallets, ubicaciones de racks y auditorías de entrada/salida.")
-    
-    df_alm = st.session_state.db_i[st.session_state.db_i["Giro"] == "Almacén Mayorista"]
-    
-    p1, p2 = st.tabs(["🏗️ Ocupación de Espacio y Racks", "📦 Entrada de Cargas Pesadas"])
-    
-    with p1:
-        st.subheader("Distribución Logística de Cajas y Pallets")
-        k1, k2 = st.columns(2)
-        k1.metric("Valor del Capital Inmovilizado", f"${(df_alm['Costo'] * df_alm['Stock']).sum():,.2f}")
-        k2.metric("Cajas Totales en Bahía", int(df_alm['Stock'].sum()))
-        
-        st.markdown("---")
-        st.write("📊 **Volumen Industrial por Código de Almacenamiento:**")
-        if not df_alm.empty:
-            chart_alm = df_alm.groupby("Item")["Stock"].sum()
-            st.bar_chart(chart_alm)
-            st.dataframe(df_alm[["Item", "Grupo", "Especifico", "Stock", "Extra"]], use_container_width=True)
-            
-    with p2:
-        st.subheader("Manifiesto de Carga (Ingreso Mayorista)")
-        with st.form("form_almacen", clear_on_submit=True):
-            f_nom = st.text_input("Descripción de Carga / Ítem SKU:")
-            f_cat = st.selectbox("Naturaleza de Carga:", ["Calzado", "Textil", "Electrónica / Celulares", "Herramientas"])
-            f_esp = st.text_input("Formato Empaque (Ej: Contenedor, Pallet, Caja Máster):")
-            f_cos = st.number_input("Costo Mayorista ($):", min_value=0.0)
-            f_pre = st.number_input("Precio Mayorista Esperado ($):", min_value=0.0)
-            f_cant = st.number_input("Número de Bultos/Cajas:", min_value=1)
-            f_ex = st.text_input("Ubicación en Nave (Ej: Rack Sector A2):", value="Sector General")
-            
-            if st.form_submit_button("🏗️ Registrar Manifiesto e Indexar Ubicación") and f_nom.strip():
-                nueva_p = pd.DataFrame([{"ID": "A", "Item": f_nom, "Giro": "Almacén Mayorista", "Grupo": f_cat, "Especifico": f_esp, "Costo": f_cos, "Precio": f_pre, "Stock": f_cant, "Extra": f_ex}])
-                st.session_state.db_i = pd.concat([st.session_state.db_i, nueva_p], ignore_index=True)
-                guardar_cambios(st.session_state.db_i, FICHERO_INV)
-                st.success("¡Manifiesto logístico procesado!"); st.rerun()
+        st.write("📋 **Historial de Operaciones de Todo el Consorcio:**")
+        st.dataframe(df_v, use_container_width=True)
+    else:
+        st.info("No se registran transacciones el día de hoy.")
